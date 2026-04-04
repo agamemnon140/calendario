@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Cal 28">
+  <meta name="theme-color" content="#08080d">
+  <meta name="description" content="Calculadora mental de dias da semana com regras mnemônicas do calendário">
+  <title>Calendário Mnemônico</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/x-icon" href="icons/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body, #root { height: 100%; }
+    body {
+      background: #08080d;
+      font-family: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
+    }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script>
+"use strict";
+const { useState, useMemo, createElement: h } = React;
+
+const MN=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const MF=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const DN=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+const DF=["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+const MO=[0,3,3,6,1,4,6,2,5,0,3,5];
+
+const DOI=[
+  {d:4,m:6,y:1776,label:"Independência dos EUA"},
+  {d:14,m:6,y:1789,label:"Queda da Bastilha"},
+  {d:18,m:5,y:1815,label:"Batalha de Waterloo"},
+  {d:7,m:8,y:1822,label:"Independência do Brasil"},
+  {d:15,m:10,y:1889,label:"Proclamação da República"},
+  {d:11,m:10,y:1918,label:"Armistício WWI"},
+  {d:31,m:9,y:1933,label:null},
+  {d:6,m:5,y:1944,label:"D-Day"},
+  {d:8,m:4,y:1945,label:"Armistício WWII (VE Day)"},
+  {d:6,m:7,y:1945,label:"Hiroshima"},
+  {d:29,m:9,y:1956,label:null},
+  {d:29,m:5,y:1960,label:null},
+  {d:9,m:0,y:1987,label:null},
+  {d:9,m:10,y:1989,label:"Queda do Muro de Berlim"},
+  {d:24,m:2,y:1990,label:null},
+];
+
+function isLY(y){return(y%4===0&&y%100!==0)||(y%400===0)}
+function dim(y,m){return new Date(y,m+1,0).getDate()}
+function fdow(y,m){return new Date(y,m,1).getDay()}
+function dow(y,m,d){return new Date(y,m,d).getDay()}
+
+function getYC(y){
+  const c=Math.floor(y/100),yy=y%100,ca={0:6,1:4,2:2,3:0};
+  const cc=ca[c%4],yc=(yy+Math.floor(yy/4))%7;
+  return{cc,yc,tc:(cc+yc)%7};
+}
+function eYC(y){const{tc}=getYC(y);return isLY(y)?((tc-1+7)%7):tc}
+function eOff(y,m){return(MO[m]+(isLY(y)&&m>=2?1:0))%7}
+function getCB(y){
+  const tc=Math.floor(y/100),b=20;if(tc===b)return 0;
+  let br=0,lo=Math.min(tc,b)+1,hi=Math.max(tc,b);
+  for(let c=lo;c<=hi;c++)if((c*100)%400!==0)br++;return br;
+}
+function calcBD(y,m,d){
+  const yc=eYC(y),eo=eOff(y,m),adj=isLY(y)&&m>=2,raw=yc+eo+d;
+  return{yc,eo,adj,day:d,raw,dow:((raw%7)+7)%7};
+}
+
+function getEaster(y){
+  const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4;
+  const f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),hh=(19*a+b-d-g+15)%30;
+  const i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-hh-k)%7;
+  const mm=Math.floor((a+11*hh+22*l)/451),mo=Math.floor((hh+l-7*mm+114)/31)-1;
+  return{m:mo,d:((hh+l-7*mm+114)%31)+1};
+}
+function addD(y,m,d,n){const dt=new Date(y,m,d);dt.setDate(dt.getDate()+n);return{m:dt.getMonth(),d:dt.getDate()}}
+
+function getHol(y){
+  const e=getEaster(y),ca=addD(y,e.m,e.d,-47),ss=addD(y,e.m,e.d,-2),co=addD(y,e.m,e.d,60);
+  return[
+    {m:0,d:1,label:"Ano Novo"},{m:0,d:25,label:"Aniversário de SP"},
+    {...ca,label:"Carnaval"},{...ss,label:"Sexta-feira Santa"},
+    {m:3,d:21,label:"Tiradentes"},{m:4,d:1,label:"Dia do Trabalho"},
+    {...co,label:"Corpus Christi"},{m:6,d:9,label:"Revolução de 1932"},
+    {m:8,d:7,label:"Independência"},{m:9,d:12,label:"N.S. Aparecida"},
+    {m:10,d:2,label:"Finados"},{m:10,d:15,label:"Proclamação da República"},
+    {m:10,d:20,label:"Consciência Negra"},{m:11,d:25,label:"Natal"},
+  ];
+}
+function cntWDH(y){return getHol(y).filter(h=>{const d=dow(y,h.m,h.d);return d>=1&&d<=5}).length}
+
+function getFM(y){
+  const kn=new Date(2000,0,6,18,14).getTime(),syn=29.530588853,ms=86400000;
+  const ds=(new Date(y,0,1).getTime()-kn)/ms,cy=Math.floor(ds/syn),r=[];
+  for(let i=cy-1;i<cy+14;i++){
+    const dt=new Date(kn+(i*syn+14.765)*ms);
+    if(dt.getFullYear()===y)r.push({m:dt.getMonth(),d:dt.getDate()});
+  }return r;
+}
+function buildLU(y){
+  const hols=getHol(y),moons=getFM(y),hM={},fM={};
+  hols.forEach(x=>{hM[x.m+"-"+x.d]=x.label});
+  moons.forEach(x=>{fM[x.m+"-"+x.d]=true});
+  return{hM,fM};
+}
+
+const C={
+  bg:"#08080d",surface:"#111119",surfaceAlt:"#16161f",
+  border:"#1e1e30",text:"#e8e6f0",muted:"#8a88a0",dim:"#55536a",
+  accent:"#f0c040",accentDim:"#f0c04028",
+  today:"#40a8f0",todayDim:"#40a8f020",
+  sel:"#e04080",selDim:"#e0408022",
+  green:"#40d89a",moon:"#fef3c7",
+};
+const mnS={background:"transparent",border:"1px solid "+C.border,color:C.muted,
+  padding:"8px 16px",borderRadius:8,cursor:"pointer",fontSize:14,
+  fontFamily:"'JetBrains Mono',monospace",fontWeight:600};
+
+function Btn({onClick,text,small}){
+  return h("button",{onClick,style:{background:C.surface,border:"1.5px solid "+C.border,color:C.muted,
+    padding:small?"8px 6px":"8px 12px",borderRadius:8,cursor:"pointer",
+    fontSize:small?12:15,fontFamily:"inherit",fontWeight:600,minWidth:36}},text);
+}
+function Tag({label,value,color,onClick}){
+  return h("div",{onClick,style:{display:"flex",alignItems:"center",gap:5,fontSize:13,
+    color,fontWeight:700,background:color+"18",padding:"5px 12px",
+    borderRadius:8,cursor:onClick?"pointer":"default"}},
+    label,value!==undefined?h("span",{style:{fontSize:16,fontWeight:800}},value):null);
+}
+function Card({title,children}){
+  return h("div",{style:{background:C.surface,borderRadius:14,padding:16,border:"1px solid "+C.border}},
+    h("div",{style:{fontSize:11,color:C.green,textTransform:"uppercase",letterSpacing:2,fontWeight:700,marginBottom:10}},title),children);
+}
+function P({children,style:s}){return h("p",{style:{margin:"0 0 6px",color:C.muted,fontSize:15,lineHeight:1.6,...(s||{})}},children)}
+function B({children}){return h("span",{style:{color:C.text,fontWeight:700}},children)}
+function Row({label,val,c,bold,small}){
+  return h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+    h("span",{style:{fontSize:small?12:14,color:C.muted}},label),
+    h("span",{style:{color:c,fontWeight:bold?800:700,fontSize:bold?20:16,minWidth:28,textAlign:"right"}},val));
+}
+function Hr(){return h("div",{style:{borderTop:"1px solid "+C.border,margin:"2px 0"}})}
+
+function App(){
+  const now=new Date();
+  const[year,setYear]=useState(now.getFullYear());
+  const[sel,setSel]=useState({m:now.getMonth(),d:now.getDate()});
+  const[view,setView]=useState("cal");
+  const tY=now.getFullYear(),tM=now.getMonth(),tD=now.getDate();
+  const bd=useMemo(()=>calcBD(year,sel.m,sel.d),[year,sel]);
+  const eyc=useMemo(()=>eYC(year),[year]);
+  const cb=useMemo(()=>getCB(year),[year]);
+  const lp=isLY(year);
+  const{hM,fM}=useMemo(()=>buildLU(year),[year]);
+  const wdH=useMemo(()=>cntWDH(year),[year]);
+  const selH=hM[sel.m+"-"+sel.d]||null;
+  const selFM=fM[sel.m+"-"+sel.d]||false;
+  const isST=year===tY&&sel.m===tM&&sel.d===tD;
+  const rC=isST?C.today:selH?C.sel:C.text;
+
+  function goTo(d,m,y){setYear(y);setSel({m,d});setView("cal")}
+
+  // Ribbon
+  const ribbon=h("div",{style:{display:"flex",gap:2,margin:"10px 0 14px"}},
+    MN.map((name,i)=>{
+      const act=sel.m===i,adj=lp&&i>=2,eo=eOff(year,i);
+      const nc=adj?(act?C.today:C.today+"cc"):(act?C.accent:C.muted);
+      return h("div",{key:i,onClick:()=>setSel({m:i,d:1}),style:{
+        flex:"1 0 0",minWidth:0,textAlign:"center",padding:"6px 1px",borderRadius:8,cursor:"pointer",
+        background:act?(adj?C.todayDim:C.accentDim):C.surface,
+        border:"1.5px solid "+(act?(adj?C.today+"70":C.accent+"70"):C.border),transition:"all 0.15s",
+      }},
+        h("div",{style:{fontSize:9,color:act?(adj?C.today:C.accent):C.dim,fontWeight:500}},name),
+        h("div",{style:{fontSize:17,fontWeight:800,color:nc,lineHeight:"1.2"}},eo));
+    }));
+
+  const yearNav=h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:10}},
+    h(Btn,{onClick:()=>setYear(y=>y-28),text:"−28",small:true}),
+    h(Btn,{onClick:()=>setYear(y=>y-4),text:"−4"}),
+    h(Btn,{onClick:()=>setYear(y=>y-1),text:"◂"}),
+    h("div",{style:{fontSize:34,fontWeight:800,fontFamily:"'Playfair Display',serif",minWidth:100,textAlign:"center",lineHeight:1}},year),
+    h(Btn,{onClick:()=>setYear(y=>y+1),text:"▸"}),
+    h(Btn,{onClick:()=>setYear(y=>y+4),text:"+4"}),
+    h(Btn,{onClick:()=>setYear(y=>y+28),text:"+28",small:true}));
+
+  const tags=h("div",{style:{display:"flex",gap:6,justifyContent:"center",marginBottom:14,flexWrap:"wrap"}},
+    cb>0?h("div",{style:{display:"flex",alignItems:"center",gap:5,fontSize:13,color:C.sel,fontWeight:700,
+      background:C.selDim,padding:"5px 12px",borderRadius:8,border:"1.5px solid "+C.sel+"50"}},
+      "⚠ ciclo 28a ",h("span",{style:{fontSize:16,fontWeight:800}},"±"+cb)):null,
+    h(Tag,{label:"Cód. Ano ",value:eyc,color:C.accent}),
+    h(Tag,{label:lp?"Bissexto ✓":"Comum",color:lp?C.today:C.dim}),
+    h(Tag,{label:"Hoje",color:C.today,onClick:()=>{setYear(tY);setSel({m:tM,d:tD})}}));
+
+  const tabs=h("div",{style:{display:"flex",gap:4,marginBottom:14}},
+    [["cal","Calendário"],["help","Regras"],["cycles","Ciclos"],["dates","✦"]].map(([k,lb])=>
+      h("button",{key:k,onClick:()=>setView(k),style:{
+        flex:k==="dates"?"0 0 44px":"1",padding:"10px 0",borderRadius:8,border:"none",
+        background:view===k?(k==="dates"?C.sel+"20":C.accent+"20"):C.surface,
+        color:view===k?(k==="dates"?C.sel:C.accent):C.muted,
+        fontWeight:view===k?700:500,fontSize:k==="dates"?16:14,fontFamily:"inherit",
+        cursor:"pointer",transition:"all 0.15s",
+        borderBottom:view===k?"2px solid "+(k==="dates"?C.sel:C.accent):"2px solid transparent",
+      }},lb)));
+
+  // Calendar view
+  const calV=view!=="cal"?null:h("div",{style:{animation:"fadeIn 0.2s ease"}},
+    h("div",{style:{background:C.surface,borderRadius:14,padding:14,border:"1px solid "+C.border,marginBottom:12}},
+      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}},
+        h("button",{onClick:()=>{if(sel.m===0){setYear(y=>y-1);setSel({m:11,d:1})}else setSel({m:sel.m-1,d:1})},style:mnS},"◂"),
+        h("div",{style:{textAlign:"center"}},
+          h("span",{style:{fontSize:20,fontWeight:700,fontFamily:"'Playfair Display',serif"}},MF[sel.m]),
+          h("span",{style:{fontSize:14,fontWeight:700,marginLeft:10,color:(lp&&sel.m>=2)?C.today:C.accent}},eOff(year,sel.m))),
+        h("button",{onClick:()=>{if(sel.m===11){setYear(y=>y+1);setSel({m:0,d:1})}else setSel({m:sel.m+1,d:1})},style:mnS},"▸")),
+      h("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}},
+        DN.map(d=>h("div",{key:d,style:{textAlign:"center",fontSize:13,color:C.dim,fontWeight:600,padding:"4px 0"}},d))),
+      h("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}},
+        Array.from({length:fdow(year,sel.m)},(_,i)=>h("div",{key:"e"+i})),
+        Array.from({length:dim(year,sel.m)},(_,i)=>{
+          const d=i+1,k=sel.m+"-"+d,isT=year===tY&&sel.m===tM&&d===tD;
+          const iS=sel.d===d,iSu=dow(year,sel.m,d)===0,iH=hM[k]||null,iM=!!fM[k];
+          return h("div",{key:d,onClick:()=>setSel({...sel,d}),style:{
+            textAlign:"center",padding:"3px 0 1px",borderRadius:10,cursor:"pointer",
+            fontWeight:(iS||isT)?800:500,
+            color:iS?C.bg:isT?C.today:(iH||iSu)?C.sel+"bb":C.text,
+            background:iS?(isT?C.today:iH?C.sel:C.text):"transparent",
+            transition:"all 0.1s",
+          }},
+            h("div",{style:{fontSize:17,lineHeight:"1.2"}},d),
+            iM?h("div",{style:{fontSize:7,lineHeight:1,color:iS?C.bg:C.moon,marginTop:-1,opacity:0.9}},"●"):
+            iH?h("div",{style:{fontSize:6,lineHeight:1,marginTop:0,color:iS?C.bg+"99":C.sel+"66",whiteSpace:"nowrap",overflow:"hidden"}},iH.split(" ")[0].slice(0,5)):
+            h("div",{style:{height:8}}));
+        }))),
+    // Breakdown
+    h("div",{style:{background:C.surface,borderRadius:14,padding:16,border:"1px solid "+C.border,animation:"fadeIn 0.25s ease"}},
+      h("div",{style:{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:800,marginBottom:4}},
+        sel.d+" de "+MF[sel.m]+", "+year),
+      (selH||selFM)?h("div",{style:{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}},
+        selH?h("span",{style:{fontSize:12,color:C.sel,background:C.selDim,padding:"3px 10px",borderRadius:6,fontWeight:700,border:"1px solid "+C.sel+"40"}},"🎉 "+selH):null,
+        selFM?h("span",{style:{fontSize:12,color:C.moon,background:"#fef3c710",padding:"3px 10px",borderRadius:6,fontWeight:700,border:"1px solid #fef3c730"}},"🌕 Lua cheia"):null):null,
+      h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+        h(Row,{label:"Código do ano",val:bd.yc,c:C.accent,bold:true}),
+        h(Row,{label:"Offset "+MN[sel.m]+(bd.adj?" (biss. +1)":""),val:bd.eo,c:bd.adj?C.today:C.green}),
+        h(Row,{label:"Dia",val:bd.day,c:C.text}),
+        h(Hr),
+        h(Row,{label:bd.yc+" + "+bd.eo+" + "+bd.day+" = "+bd.raw,val:"mod 7 = "+bd.dow,c:C.muted,small:true})),
+      h("div",{style:{marginTop:14,padding:"14px 0",textAlign:"center",background:rC+"18",borderRadius:12,border:"1.5px solid "+rC+"40"}},
+        h("div",{style:{fontSize:13,color:C.muted,marginBottom:2}},"Resultado"),
+        h("div",{style:{fontSize:28,fontWeight:800,color:rC,fontFamily:"'Playfair Display',serif"}},DF[bd.dow])),
+      h("div",{style:{display:"flex",gap:4,justifyContent:"center",marginTop:12}},
+        DN.map((d,i)=>h("div",{key:i,style:{
+          width:40,height:38,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+          borderRadius:8,fontWeight:bd.dow===i?800:400,color:bd.dow===i?C.bg:C.dim,
+          background:bd.dow===i?rC:C.surfaceAlt,border:"1px solid "+(bd.dow===i?rC:C.border),lineHeight:"1.2",
+        }},h("span",{style:{fontSize:15,fontWeight:700}},i),h("span",{style:{fontSize:9}},d))))));
+
+  // Help view
+  const helpV=view!=="help"?null:h("div",{style:{animation:"fadeIn 0.2s ease",display:"flex",flexDirection:"column",gap:12}},
+    h(Card,{title:"Fórmula"},
+      h(P,null,h(B,null,"dia_semana")," = (cód_ano + offset_mês + dia) ",h(B,null,"mod 7")),
+      h(P,null,h(B,null,"cód_ano")," = cód_século + (aa + aa÷4) mod 7"),
+      h(P,null,"Se ",h("span",{style:{color:C.today}},"bissexto"),": offsets de Mar–Dez ganham ",h(B,null,"+1")),
+      h(P,{style:{fontSize:13,color:C.dim}},"Equivalente: cód_ano − 1, offsets inalterados para Jan/Fev")),
+    h(Card,{title:"Offsets Mensais (base)"},
+      h("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginTop:4}},
+        MN.map((n,i)=>h("div",{key:i,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:C.surfaceAlt,borderRadius:8}},
+          h("span",{style:{fontSize:14,color:C.muted}},n),h("span",{style:{fontSize:20,fontWeight:800,color:C.accent}},MO[i]))))),
+    h(Card,{title:"Códigos de Século"},
+      h("div",{style:{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:6,marginTop:4}},
+        [["1700s","4"],["1800s","2"],["1900s","0"],["2000s","6"],["2100s","4"],["2200s","2"]].map(([c,v])=>
+          h("div",{key:c,style:{display:"flex",justifyContent:"space-between",padding:"6px 10px",borderRadius:8,
+            background:c==="2000s"?C.accentDim:C.surfaceAlt,border:c==="2000s"?"1px solid "+C.accent+"40":"1px solid transparent"}},
+            h("span",{style:{fontSize:15,color:c==="2000s"?C.accent:C.muted}},c),h("span",{style:{fontSize:18,fontWeight:800,color:C.accent}},v)))),
+      h(P,{style:{marginTop:8}},"Ciclo: ",h(B,null,"0 → 6 → 4 → 2")," (desce 2, exceto 0→6)")),
+    h(Card,{title:"Mapeamento 0–6 → Dia"},
+      h("div",{style:{display:"flex",gap:4,marginTop:4}},
+        DF.map((d,i)=>h("div",{key:i,style:{flex:1,textAlign:"center",padding:"8px 2px",background:C.surfaceAlt,borderRadius:8}},
+          h("div",{style:{fontSize:20,fontWeight:800,color:C.today}},i),h("div",{style:{fontSize:10,color:C.muted,marginTop:2}},d.substring(0,3)))))),
+    h(Card,{title:"Legenda do Calendário"},
+      h("div",{style:{display:"flex",flexDirection:"column",gap:6,marginTop:4}},
+        h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+          h("span",{style:{color:C.sel+"bb",fontSize:15,fontWeight:700,minWidth:20}},"12"),
+          h("span",{style:{color:C.muted,fontSize:14}},"Feriado (SP)")),
+        h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+          h("span",{style:{color:C.moon,fontSize:12,minWidth:20,textAlign:"center"}},"●"),
+          h("span",{style:{color:C.muted,fontSize:14}},"Lua cheia")),
+        h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+          h("span",{style:{color:C.today,fontSize:15,fontWeight:700,minWidth:20}},"3"),
+          h("span",{style:{color:C.muted,fontSize:14}},"Hoje")),
+        h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+          h("span",{style:{color:C.sel+"bb",fontSize:15,fontWeight:500,minWidth:20}},"7"),
+          h("span",{style:{color:C.muted,fontSize:14}},"Domingo")))));
+
+  // Cycles view
+  const cycV=view!=="cycles"?null:h("div",{style:{animation:"fadeIn 0.2s ease",display:"flex",flexDirection:"column",gap:12}},
+    h(Card,{title:"Regra +5 a cada 4 anos"},
+      h(P,null,"Um ano comum avança ",h(B,null,"1")," dia. Um bissexto avança ",h(B,null,"2"),"."),
+      h(P,null,"4 anos = 3×1 + 1×2 = ",h(B,null,"5")," dias (mod 7)."),
+      h("div",{style:{marginTop:8,display:"flex",flexDirection:"column",gap:4}},
+        [-12,-8,-4,0,4,8,12,16].map(off=>{
+          const y2=year+off,info=eYC(y2),cur=off===0;
+          return h("div",{key:off,onClick:()=>setYear(y2),style:{
+            display:"flex",justifyContent:"space-between",padding:"8px 12px",borderRadius:8,cursor:"pointer",
+            background:cur?C.accentDim:C.surfaceAlt,border:"1.5px solid "+(cur?C.accent+"60":"transparent")}},
+            h("span",{style:{fontSize:16,fontWeight:cur?800:500,color:cur?C.accent:C.text}},y2),
+            h("span",{style:{fontSize:16,color:C.accent,fontWeight:700}},"cód = "+info),
+            off!==-12?h("span",{style:{fontSize:13,color:C.dim}},"Δ = "+((info-eYC(y2-4)+7)%7)):null)}))),
+    h(Card,{title:"Ciclo de 28 anos"},
+      h(P,null,"5 × 7 = 35 ≡ 0 (mod 7), então a cada ",h(B,null,"28 anos")," o calendário se repete."),
+      h(P,null,"Ano atual: ",h(B,null,year),". Mesmo calendário que ",h(B,null,year-28)," e ",h(B,null,year+28),"."),
+      h("div",{style:{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}},
+        [-56,-28,0,28,56].map(off=>{
+          const y2=year+off,cross=Math.floor(y2/100)!==Math.floor(year/100),cur=off===0;
+          return h("div",{key:off,onClick:()=>setYear(y2),style:{
+            flex:"1 0 60px",textAlign:"center",padding:"10px 4px",borderRadius:10,cursor:"pointer",
+            background:cur?C.accentDim:cross?C.selDim:C.surfaceAlt,
+            border:"1.5px solid "+(cur?C.accent+"60":cross?C.sel+"40":"transparent")}},
+            h("div",{style:{fontSize:16,fontWeight:800,color:cur?C.accent:cross?C.sel:C.text}},y2),
+            cross?h("div",{style:{fontSize:9,color:C.sel,marginTop:2}},"⚠ centenário"):null)}))),
+    h(Card,{title:"Exceção Centenária"},
+      h(P,null,"Um centenário (1900, 2100) ",h(B,null,"não é bissexto"),", quebrando o ciclo de 28."),
+      h(P,null,"Exceto ",h(B,null,"quadricentenários")," (1600, 2000, 2400): estes ",h(B,null,"são")," bissextos."),
+      h(P,null,"Efeito: offset de +5 vira ",h(B,null,"+4")," no ciclo que cruza o centenário.")),
+    h(Card,{title:"Feriados SP — "+year},
+      h(P,null,"Total: ",h(B,null,"14 feriados")," (nacionais + estadual + municipal)"),
+      h(P,null,"Em dias úteis (seg–sex): ",h(B,null,wdH)),
+      h(P,null,"Em fins de semana: ",h(B,null,14-wdH))));
+
+  // Dates view
+  const datV=view!=="dates"?null:h("div",{style:{animation:"fadeIn 0.2s ease"}},
+    h(Card,{title:"Datas de Interesse"},
+      h("div",{style:{display:"flex",flexDirection:"column",gap:6,marginTop:4}},
+        DOI.map((dt,idx)=>{
+          const dw=dow(dt.y,dt.m,dt.d),dd=String(dt.d).padStart(2,"0"),mm=String(dt.m+1).padStart(2,"0");
+          return h("div",{key:idx,onClick:()=>goTo(dt.d,dt.m,dt.y),style:{
+            display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
+            background:C.surfaceAlt,borderRadius:10,cursor:"pointer",
+            border:"1px solid "+C.border,transition:"all 0.15s"}},
+            h("div",{style:{minWidth:42,height:42,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+              background:dt.label?C.accentDim:C.selDim,borderRadius:8,
+              border:"1px solid "+(dt.label?C.accent+"40":C.sel+"40")}},
+              h("span",{style:{fontSize:9,color:dt.label?C.accent:C.sel,fontWeight:700}},DN[dw]),
+              h("span",{style:{fontSize:14,fontWeight:800,color:dt.label?C.accent:C.sel,lineHeight:1}},dw)),
+            h("div",{style:{flex:1,minWidth:0}},
+              h("div",{style:{fontSize:15,fontWeight:700,color:C.text}},dd+"/"+mm+"/"+dt.y),
+              dt.label?h("div",{style:{fontSize:12,color:C.muted,marginTop:1}},dt.label):null),
+            h("div",{style:{fontSize:11,color:C.dim}},"▸"))}))));
+
+  return h("div",{style:{
+    background:C.bg,color:C.text,minHeight:"100vh",
+    fontFamily:"'JetBrains Mono','SF Mono','Menlo',monospace",
+    padding:"calc(env(safe-area-inset-top, 16px) + 8px) 12px 16px",maxWidth:480,margin:"0 auto"}},
+    h("h1",{style:{fontFamily:"'Playfair Display',Georgia,serif",fontSize:26,fontWeight:800,margin:"0 0 2px",letterSpacing:"-0.5px"}},
+      "Calendário ",h("span",{style:{color:C.accent}},"Mnemônico")),
+    ribbon,yearNav,tags,tabs,calV,helpV,cycV,datV,
+    h("div",{style:{height:40}}));
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+  </script>
+</body>
+</html>
